@@ -166,8 +166,12 @@ module emu
 	// 1 - D-/TX
 	// 2..6 - USR2..USR6
 	// Set USER_OUT to 1 to read from USER_IN.
-	input   [6:0] USER_IN,
-	output  [6:0] USER_OUT,
+	output  USER_OSD,
+	// [MiSTer-DB9 BEGIN] - DB9/SNAC8 support: per-pin push-pull mask
+	output  [7:0] USER_PP,
+	// [MiSTer-DB9 END]
+	input   [7:0] USER_IN,
+	output  [7:0] USER_OUT,
 
 	input         OSD_STATUS
 );
@@ -175,7 +179,47 @@ module emu
 ///////// Default values for ports not used in this core /////////
 
 assign ADC_BUS  = 'Z;
-assign USER_OUT = '1;
+// [MiSTer-DB9 BEGIN] - DB9/SNAC8 support: USER_PP default
+assign USER_PP = USER_PP_DRIVE;
+// [MiSTer-DB9 END]
+// [MiSTer-DB9 BEGIN] - DB9/SNAC8 support: joydb wrapper
+wire         CLK_JOY = CLK_50M;                 // Assign clock between 40-50Mhz
+wire   [1:0] joy_type        = status[127:126]; // 0=Off, 1=Saturn, 2=DB9MD, 3=DB15
+wire         joy_2p          = status[125];
+wire         joy_db9md_en    = (joy_type == 2'd2);
+wire         joy_db15_en     = (joy_type == 2'd3);
+wire         joy_any_en      = |joy_type;
+// [MiSTer-DB9 END]
+
+// [MiSTer-DB9-Pro BEGIN] - Saturn key gate
+wire         saturn_unlocked;                   // driven by hps_io UIO_DB9_KEY (0xFE)
+// [MiSTer-DB9-Pro END]
+
+// [MiSTer-DB9 BEGIN] - DB9/SNAC8 support: joydb wrapper wires + instance
+wire   [7:0] USER_OUT_DRIVE;
+wire   [7:0] USER_PP_DRIVE;
+wire  [15:0] joydb_1, joydb_2;
+wire         joydb_1ena, joydb_2ena;
+wire  [15:0] joy_raw_payload;
+
+joydb joydb (
+  .clk             ( CLK_JOY         ),
+  .USER_IN         ( USER_IN         ),
+  .joy_type        ( joy_type        ),
+  .joy_2p          ( joy_2p          ),
+  .saturn_unlocked ( saturn_unlocked ),
+  .USER_OUT_DRIVE  ( USER_OUT_DRIVE  ),
+  .USER_PP_DRIVE   ( USER_PP_DRIVE   ),
+  .USER_OSD        ( USER_OSD        ),
+  .joydb_1         ( joydb_1         ),
+  .joydb_2         ( joydb_2         ),
+  .joydb_1ena      ( joydb_1ena      ),
+  .joydb_2ena      ( joydb_2ena      ),
+  .joy_raw         ( joy_raw_payload )
+);
+
+assign USER_OUT = USER_OUT_DRIVE;
+// [MiSTer-DB9 END]
 assign {UART_RTS, UART_TXD, UART_DTR} = 0;
 assign {SD_SCK, SD_MOSI, SD_CS} = 'Z;
 assign {SDRAM_DQ, SDRAM_A, SDRAM_BA, SDRAM_CLK, SDRAM_CKE, SDRAM_DQML, SDRAM_DQMH, SDRAM_nWE, SDRAM_nCAS, SDRAM_nRAS, SDRAM_nCS} = 'Z;
@@ -230,6 +274,11 @@ localparam CONF_STR = {
     "P1O35,Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%,CRT 75%;",
 
     "-;",
+    // [MiSTer-DB9-Pro BEGIN] - Saturn-first joy_type
+    "O[127:126],UserIO Joystick,Off,Saturn,DB9MD,DB15;",
+    "O[125],UserIO Players, 1 Player,2 Players;",
+    // [MiSTer-DB9-Pro END]
+    "-;",
     "DIP;",
     "-;",
     "R0,Reset and close OSD;",
@@ -248,8 +297,12 @@ wire            ioctl_wr;
 wire            ioctl_wait;
 
 wire    [1:0]   buttons; //hardware button
-wire    [15:0]  joystick_0;
-wire    [15:0]  joystick_1;
+wire    [15:0]  joystick_0_USB;
+wire    [15:0]  joystick_1_USB;
+// [MiSTer-DB9-Pro BEGIN] - DB controllers muted while OSD is open
+wire    [15:0]  joystick_0 = joydb_1ena ? (OSD_STATUS ? 16'b0 : {joydb_1[10],joydb_1[11]|(joydb_1[10]&joydb_1[5]),joydb_1[7],joydb_1[6],joydb_1[5:0]}) : joystick_0_USB;
+wire    [15:0]  joystick_1 = joydb_2ena ? (OSD_STATUS ? 16'b0 : {joydb_2[10],joydb_2[11]|(joydb_2[10]&joydb_2[5]),joydb_2[7],joydb_2[6],joydb_2[5:0]}) : joydb_1ena ? joystick_0_USB : joystick_1_USB;
+// [MiSTer-DB9-Pro END]
 
 wire            forced_scandoubler; //?
 wire    [21:0]  gamma_bus;
@@ -283,8 +336,15 @@ hps_io #(.CONF_STR(CONF_STR)) hps_io
     .ioctl_index                (ioctl_index                ),
     .ioctl_wait                 (ioctl_wait                 ),
     
-    .joystick_0                 (joystick_0                 ),
-    .joystick_1                 (joystick_1                 )
+    .joystick_0                 (joystick_0_USB             ),
+    .joystick_1                 (joystick_1_USB             ),
+
+    // [MiSTer-DB9 BEGIN] - DB9/SNAC8 support: joy_raw
+    .joy_raw                    (OSD_STATUS ? joy_raw_payload : 16'b0),
+    // [MiSTer-DB9 END]
+    // [MiSTer-DB9-Pro BEGIN] - Saturn key gate
+    .saturn_unlocked            (saturn_unlocked            )
+    // [MiSTer-DB9-Pro END]
 );
 
 

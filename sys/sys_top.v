@@ -1610,7 +1610,7 @@ audio_out audio_out
 	);
 `endif
 
-////////////////  User I/O (USB 3.0 connector) /////////////////////////
+////////////////  User I/O (USB 3.0 connector / DB9/SNAC8 controllers / MT32-pi I2C / HDMI I2S audio) /////////////////////////
 
 assign USER_IO[0] =                       !user_out[0]  ? 1'b0 : 1'bZ;
 assign USER_IO[1] =                       !user_out[1]  ? 1'b0 : 1'bZ;
