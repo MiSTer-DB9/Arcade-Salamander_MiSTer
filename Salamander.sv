@@ -55,6 +55,7 @@ module emu
 	input  [11:0] HDMI_HEIGHT,
 	output        HDMI_FREEZE,
 	output        HDMI_BLACKOUT,
+	output        HDMI_BOB_DEINT,
 
 `ifdef MISTER_FB
 	// Use framebuffer in DDRAM
@@ -253,6 +254,7 @@ assign {SD_SCK, SD_MOSI, SD_CS} = 'Z;
 assign {SDRAM_DQ, SDRAM_A, SDRAM_BA, SDRAM_CLK, SDRAM_CKE, SDRAM_DQML, SDRAM_DQMH, SDRAM_nWE, SDRAM_nCAS, SDRAM_nRAS, SDRAM_nCS} = 'Z;
 assign {DDRAM_CLK, DDRAM_BURSTCNT, DDRAM_ADDR, DDRAM_DIN, DDRAM_BE, DDRAM_RD, DDRAM_WE} = '0;  
 
+assign HDMI_BOB_DEINT = 0;
 assign LED_DISK = 0;
 assign LED_POWER = 0;
 assign BUTTONS = 0;
@@ -286,7 +288,7 @@ pll pll(
 // 0         1         2         3          4         5         6   
 // 01234567890123456789012345678901 23456789012345678901234567890123
 // 0123456789ABCDEFGHIJKLMNOPQRSTUV 0123456789ABCDEFGHIJKLMNOPQRSTUV
-// X  XXX X  X            X
+// X  XXX X  XX           X
 
 wire    [127:0] status; //status bits
 
@@ -294,12 +296,19 @@ wire    [127:0] status; //status bits
 localparam CONF_STR = {
     "Salamander;",
     "-;",
+	"O9,Player 1 Ship,Vic Viper,Lord British;",
+    "-;",
     "P1,Scaler Settings;",
     "P1-;",
     "P1O7,Aspect ratio,original,full screen;",
 
     "P1OA,VGA Scaler,off,on;",
     "P1O35,Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%,CRT 75%;",
+
+	"-;",
+    "P2,Audio;",
+    "P2-;",
+    "P2OB,Jamma mono out,off,on;",
 
     "-;",
     // [MiSTer-DB9-Pro BEGIN] - Saturn-first joy_type
@@ -389,9 +398,20 @@ wire            vcen;
 wire            master_reset = RESET | status[0] | buttons[1];
 
 wire            flip = status[23];
-
+// Audio volumes (4-bit)
+	wire [3:0] vol_ym2151  = status[14:11];
+    wire [3:0] vol_vlm5030 = status[18:15];
+    wire [3:0] vol_k007232 = status[22:19];
+    wire [3:0] vol_master  = status[26:23]; 
 assign          AUDIO_S = 1'b1;
-assign          AUDIO_MIX = 2'd0;
+assign          AUDIO_MIX = status[11] ? 2'd3 : 2'd0;
+wire            ship_sides_swap = status[9];
+
+// Left controller always = i_JOYSTICK0 = whichever ship the menu currently
+// has assigned to the Left side; Right controller always = i_JOYSTICK1.
+// Default (ship_sides_swap=0): Left=Vic Viper, Right=Lord British.
+wire    [15:0]  joystick_left  = ship_sides_swap ? joystick_1 : joystick_0;
+wire    [15:0]  joystick_right = ship_sides_swap ? joystick_0 : joystick_1;
 
 Salamander_emu gameboard_top (
     .i_EMU_MCLK                 (CLK72M                     ),
@@ -413,9 +433,9 @@ Salamander_emu gameboard_top (
     .o_SND_L                    (AUDIO_L                    ),
     .o_SND_R                    (AUDIO_R                    ),
 
-    .i_JOYSTICK0                (joystick_0                 ),
-    .i_JOYSTICK1                (joystick_1                 ),
-
+    .i_JOYSTICK0                (joystick_left              ),
+    .i_JOYSTICK1                (joystick_right             ),
+	
     .ioctl_index                (ioctl_index                ),
     .ioctl_download             (ioctl_download             ),
     .ioctl_addr                 (ioctl_addr                 ),
